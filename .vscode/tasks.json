@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "zig: build",
+			"detail": "Build gherkin library.",
+			"type": "process",
+			"command": "zig",
+			"args": ["build"],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"group": "none"
+		}
+	]
+}

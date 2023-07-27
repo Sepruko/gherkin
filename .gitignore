@@ -1,0 +1,8 @@
+# Log Files
+**/*.log
+
+# Zig Toolchain
+**/zig-*/
+
+# MacOS' Finder
+**/.DS_Store

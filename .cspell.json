@@ -1,0 +1,18 @@
+{
+	"$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+	"version": "0.2",
+	"language": "en",
+	"ignorePaths": ["**/zig-cache/**", "**/zig-out/**"],
+	"maxNumberOfProblems": 10,
+	"minWordLength": 3,
+	"allowCompoundWords": true,
+	"dictionaries": ["gherkin", "filetypes"],
+	"dictionaryDefinitions": [
+		{
+			"name": "gherkin",
+			"description": "Words and terms used in the gherkin project.",
+			"path": "./.cspell/gherkin.txt",
+			"addWords": true
+		}
+	]
+}
