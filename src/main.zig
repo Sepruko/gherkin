@@ -67,6 +67,26 @@ pub const Gherkin = struct {
         self.* = try init(allocator, .{});
         return unmanaged;
     }
+
+    pub fn toOwnedSlice(self: *Gherkin) ![]u8 {
+        const allocator = self.allocator;
+
+        var owned_slice = try self.unmanaged.inner_list.toOwnedSlice(allocator);
+        errdefer allocator.free(owned_slice);
+
+        self.* = try init(allocator, .{});
+        return owned_slice;
+    }
+
+    pub fn toOwnedSliceSentinel(self: *Gherkin, comptime sentinel: u8) ![:sentinel]u8 {
+        const allocator = self.allocator;
+
+        var owned_slice = try self.unmanaged.inner_list.toOwnedSliceSentinel(allocator, sentinel);
+        errdefer allocator.free(owned_slice);
+
+        self.* = try init(allocator, .{});
+        return owned_slice;
+    }
 };
 
 pub const GherkinUnmanaged = struct {
@@ -115,6 +135,26 @@ pub const GherkinUnmanaged = struct {
             .unmanaged = self.*,
             .allocator = allocator,
         };
+    }
+
+    pub fn toOwnedSlice(self: *GherkinUnmanaged, allocator: Allocator) ![]u8 {
+        var owned_slice = try self.inner_list.toOwnedSlice(allocator);
+        errdefer allocator.free(owned_slice);
+
+        self.* = try init(allocator, .{});
+        return owned_slice;
+    }
+
+    pub fn toOwnedSliceSentinel(
+        self: *GherkinUnmanaged,
+        allocator: Allocator,
+        comptime sentinel: u8,
+    ) ![:sentinel]u8 {
+        var owned_slice = try self.inner_list.toOwnedSliceSentinel(allocator, sentinel);
+        errdefer allocator.free(owned_slice);
+
+        self.* = try init(allocator, .{});
+        return owned_slice;
     }
 };
 
