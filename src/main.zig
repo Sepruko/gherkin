@@ -43,6 +43,24 @@ pub const Gherkin = struct {
         self.* = undefined;
     }
 
+    pub fn fromOwnedSlice(allocator: Allocator, slice: []u8) Gherkin {
+        return .{
+            .unmanaged = GherkinUnmanaged.fromOwnedSlice(slice),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn fromOwnedSliceSentinel(
+        allocator: Allocator,
+        comptime sentinel: u8,
+        slice: [:sentinel]u8,
+    ) Gherkin {
+        return .{
+            .unmanaged = GherkinUnmanaged.fromOwnedSliceSentinel(sentinel, slice),
+            .allocator = allocator,
+        };
+    }
+
     pub fn moveToUnmanaged(self: *Gherkin) !GherkinUnmanaged {
         const allocator = self.allocator;
         var unmanaged = self.unmanaged;
@@ -72,6 +90,24 @@ pub const GherkinUnmanaged = struct {
     pub fn deinit(self: *GherkinUnmanaged, allocator: Allocator) void {
         self.inner_list.deinit(allocator);
         self.* = undefined;
+    }
+
+    pub fn fromOwnedSlice(slice: []u8) GherkinUnmanaged {
+        if (slice.len < @sizeOf(u32))
+            @panic("slice is too small to possibly fit an LE u32 header length");
+
+        return .{
+            .inner_list = InnerList.fromOwnedSlice(slice),
+        };
+    }
+
+    pub fn fromOwnedSliceSentinel(comptime sentinel: u8, slice: [:sentinel]u8) ![:sentinel]u8 {
+        if (slice.len < @sizeOf(u32))
+            @panic("slice is too small to possibly fit an LE u32 header length");
+
+        return .{
+            .inner_list = InnerList.fromOwnedSliceSentinel(sentinel, slice),
+        };
     }
 
     pub fn toManaged(self: *GherkinUnmanaged, allocator: Allocator) Gherkin {
