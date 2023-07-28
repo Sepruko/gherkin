@@ -20,6 +20,6 @@ pub fn build(b: *std.Build) void {
 
     const lib_tests_artifact = b.addRunArtifact(lib_tests);
 
-    const lib_tests_step = b.step("lib-test", "Run gherkin library tests");
+    const lib_tests_step = b.step("test", "Run gherkin library tests");
     lib_tests_step.dependOn(&lib_tests_artifact.step);
 }
