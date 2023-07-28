@@ -42,6 +42,13 @@ pub const Gherkin = struct {
         self.unmanaged.deinit(self.allocator);
         self.* = undefined;
     }
+
+    pub fn moveToUnmanaged(self: *Gherkin) !GherkinUnmanaged {
+        const allocator = self.allocator;
+        var unmanaged = self.unmanaged;
+        self.* = try init(allocator, .{});
+        return unmanaged;
+    }
 };
 
 pub const GherkinUnmanaged = struct {
@@ -65,6 +72,13 @@ pub const GherkinUnmanaged = struct {
     pub fn deinit(self: *GherkinUnmanaged, allocator: Allocator) void {
         self.inner_list.deinit(allocator);
         self.* = undefined;
+    }
+
+    pub fn toManaged(self: *GherkinUnmanaged, allocator: Allocator) Gherkin {
+        return .{
+            .unmanaged = self.*,
+            .allocator = allocator,
+        };
     }
 };
 
