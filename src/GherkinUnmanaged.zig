@@ -1,3 +1,9 @@
+//! A Gherkin, but the allocator is passed as a parameter to any method calls
+//! that require it.
+//!
+//! The same allocator **must** be used throughout the lifetime of a
+//! GherkinUnmanaged.
+
 const std = @import("std");
 const fmt = std.fmt;
 const mem = std.mem;
@@ -5,16 +11,25 @@ const Allocator = mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const Gherkin = @import("Gherkin.zig");
 
+/// The internal `std.ArrayListUnmanaged`. Used for dynamically scaling the
+/// allocated memory required.
 inner_list: InnerList,
 
 const GherkinUnmanaged = @This();
 
+/// This type exists due to changes with the type system in Zig 0.11.0, it also
+/// provides an easy reference to the exact type used by GherkinUnmanaged.
 pub const InnerList = ArrayListUnmanaged(u8);
 
+/// Options for when initializing a new GherkinUnmanaged with `init`.
 pub const Options = struct {
     header_size: u32 = @sizeOf(u32),
 };
 
+/// Initialize a new GherkinUnmanaged. Used for writing simple values as binary
+/// data to memory.
+///
+/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
 pub fn init(allocator: Allocator, options: Options) Allocator.Error!GherkinUnmanaged {
     if (options.header_size < @sizeOf(u32))
         @panic(fmt.comptimePrint("Provided options.header_size is <{d}", .{@sizeOf(u32)}));
@@ -29,11 +44,17 @@ pub fn init(allocator: Allocator, options: Options) Allocator.Error!GherkinUnman
     };
 }
 
+/// Deinitialize a GherkinUnmanaged, cleaning up any memory still allocated with
+/// the passed `allocator`.
 pub fn deinit(self: *GherkinUnmanaged, allocator: Allocator) void {
     self.inner_list.deinit(allocator);
     self.* = undefined;
 }
 
+/// Convert this GherkinUnmanaged into the memory-managed equivalent. The
+/// returned gherkin has ownership of the allocated memory.
+///
+/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
 pub fn toManaged(self: *GherkinUnmanaged, allocator: Allocator) Gherkin {
     return .{
         .unmanaged = self.*,
@@ -41,18 +62,30 @@ pub fn toManaged(self: *GherkinUnmanaged, allocator: Allocator) Gherkin {
     };
 }
 
+/// Create a new GherkinUnmanaged with ownership of the passed slice. The same
+/// `allocator` that was used to allocate the passed memory must be used
+/// throughout the lifetime of the returned gherkin.
+///
+/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
 pub fn fromOwnedSlice(slice: []u8) GherkinUnmanaged {
     return .{
         .inner_list = InnerList.fromOwnedSlice(slice),
     };
 }
 
+/// Create a new GherkinUnmanaged with ownership of the passed slice. The same
+/// allocator that was used to allocate the passed memory must be used
+/// throughout the lifetime of the returned gherkin.
+///
+/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
 pub fn fromOwnedSliceSentinel(comptime sentinel: u8, slice: [:sentinel]u8) GherkinUnmanaged {
     return .{
         .inner_list = InnerList.fromOwnedSliceSentinel(sentinel, slice),
     };
 }
 
+/// The caller owns the returned memory, emptying this gherkin. The `deinit`
+/// method remains safe to call, however, it is unnecessary.
 pub fn toOwnedSlice(self: *GherkinUnmanaged, allocator: Allocator) Allocator.Error![]u8 {
     var owned_slice = try self.inner_list.toOwnedSlice(allocator);
     errdefer allocator.free(owned_slice);
@@ -61,6 +94,8 @@ pub fn toOwnedSlice(self: *GherkinUnmanaged, allocator: Allocator) Allocator.Err
     return owned_slice;
 }
 
+/// The caller owns the returned memory, emptying this gherkin. The `deinit`
+/// method remains safe to call, however, it is unnecessary.
 pub inline fn toOwnedSliceSentinel(
     self: *GherkinUnmanaged,
     allocator: Allocator,
@@ -69,20 +104,42 @@ pub inline fn toOwnedSliceSentinel(
     return self.toOwnedSlice(allocator)[0.. :sentinel];
 }
 
+/// Create a copy of the GherkinUnmanaged. The same `allocator` must be used
+/// throughout the lifetime of the returned gherkin.
+///
+/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
 pub fn clone(self: GherkinUnmanaged, allocator: Allocator) Allocator.Error!GherkinUnmanaged {
     return .{
         .inner_list = try self.inner_list.clone(allocator),
     };
 }
 
+/// An internal method for readably retrieving the `header_size` of the gherkin.
 inline fn getHeaderSize(self: GherkinUnmanaged) u32 {
     return mem.readIntLittle(u32, self.inner_list.items[0..4]);
 }
 
+/// An internal method for readably setting the `header_size` of the gherkin.
 inline fn setHeaderSize(self: *GherkinUnmanaged, size: u32) void {
     mem.writeIntLittle(u32, self.inner_list.items[0..4], size);
 }
 
+/// Write a simple type as binary data to memory. The same `allocator` must be
+/// used throughout the lifetime of the gherkin.
+///
+/// The supported types are...
+///
+/// - integers (`u8`, `u67`, `i16`, etc.)
+/// - booleans (`true` and `false`)
+/// - arrays (as long as their child type is also supported)
+/// - pointers (single-item pointers and slices are supported, as long as their child type is also supported)
+///
+/// The special cases are...
+///
+/// - `[]u8` values are appended as-is (treated as 'raw' data)
+/// - `[]const integer` values are appended as-is with a leading 4-byte length
+///
+/// For writing many-item pointers, use `writeMany` or `writeManySentinel`.
 pub inline fn write(
     self: *GherkinUnmanaged,
     allocator: Allocator,
@@ -95,6 +152,8 @@ pub inline fn write(
     return written_bytes;
 }
 
+/// Used to write many-item pointers to memory as binary data. See the
+/// documentation for `write` to see what child types are supported.
 pub fn writeMany(
     self: *GherkinUnmanaged,
     allocator: Allocator,
@@ -118,6 +177,8 @@ pub fn writeMany(
     return written_bytes;
 }
 
+/// Used to write many-item pointers to memory as binary data. See the
+/// documentation for `write` to see what child types are supported.
 pub inline fn writeManySentinel(
     self: *GherkinUnmanaged,
     allocator: Allocator,
@@ -129,6 +190,9 @@ pub inline fn writeManySentinel(
     return self.writeMany(allocator, T, ptr, len + 1);
 }
 
+/// The internal write method, which may call itself. This is used to ensure the
+/// `usize` returned from `write` is correct, and to separate the `header_size`
+/// updating logic from the meat.
 fn innerWrite(
     self: *GherkinUnmanaged,
     allocator: Allocator,
