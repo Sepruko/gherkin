@@ -136,8 +136,8 @@ inline fn setHeaderSize(self: *GherkinUnmanaged, size: u32) void {
 ///
 /// The special cases are...
 ///
-/// - `[]u8` values are appended as-is (treated as 'raw' data)
-/// - `[]const integer` values are appended as-is with a leading 4-byte length
+/// - `[]u8` slices are appended as-is (treated as 'raw' data)
+/// - `[(:sentinel)](const )integer` slices (not `[]u8`) are copied directly
 ///
 /// For writing many-item pointers, use `writeMany` or `writeManySentinel`.
 pub inline fn write(
@@ -214,19 +214,19 @@ fn innerWrite(
         .Pointer => |ptr_info| switch (ptr_info.size) {
             .One => self.innerWrite(allocator, ptr_info.child, value.*),
             .Many => @compileError("Please use .writeMany or .writeManySentinel for many-item pointers"),
-            .Slice => if (ptr_info.sentinel == null)
-                if (T == []u8) append_raw: {
-                    try self.inner_list.appendSlice(allocator, value);
-                    break :append_raw value.len;
-                } else if (@typeInfo(ptr_info.child) == .Int) append_as_u8_slice: {
-                    const len = @sizeOf(ptr_info.child) * value.len;
+            .Slice => if (T == []u8) blk: {
+                try self.inner_list.appendSlice(allocator, value);
+                break :blk value.len;
+            } else if (@typeInfo(ptr_info.child) == .Int) blk: {
+                const len = @sizeOf(ptr_info.child) * value.len;
 
-                    _ = try self.innerWrite(allocator, u31, @as(u31, @truncate(len)));
-                    var target_memory = try self.inner_list.addManyAsSlice(allocator, len);
-                    @memcpy(target_memory, @as([*]const u8, @ptrCast(value.ptr)));
+                _ = try self.innerWrite(allocator, u31, @as(u31, @truncate(len)));
+                var target_memory = try self.inner_list.addManyAsSlice(allocator, len);
+                @memcpy(target_memory, @as([*]const u8, @ptrCast(value.ptr)));
 
-                    break :append_as_u8_slice @sizeOf(i32) + len;
-                } else self.writeMany(allocator, ptr_info.child, value.ptr, value.len)
+                break :blk @sizeOf(i32) + len;
+            } else if (ptr_info.sentinel == null)
+                self.writeMany(allocator, ptr_info.child, value.ptr, value.len)
             else
                 self.writeManySentinel(allocator, ptr_info.child, value.ptr, value.len),
             else => @compileError(
