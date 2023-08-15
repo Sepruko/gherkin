@@ -45,7 +45,7 @@ pub fn main() !void {
 ```
 
 > **Warning**
-> There is no support for the C ABI yet, meaning you cannot use this directory
+> There is no support for the C ABI yet, meaning you cannot use this directly
 > from C or any compatible languages.
 
 ## Contributing
