@@ -7,6 +7,7 @@
 const std = @import("std");
 const fmt = std.fmt;
 const mem = std.mem;
+const testing = std.testing;
 const Allocator = mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const Gherkin = @import("Gherkin.zig");
@@ -56,11 +57,14 @@ pub fn deinit(self: *GherkinUnmanaged, allocator: Allocator) void {
 /// returned gherkin has ownership of the allocated memory.
 ///
 /// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
-pub fn toManaged(self: *GherkinUnmanaged, allocator: Allocator) Gherkin {
-    return .{
+pub fn toManaged(self: *GherkinUnmanaged, allocator: Allocator) Allocator.Error!Gherkin {
+    var managed: Gherkin = .{
         .unmanaged = self.*,
         .allocator = allocator,
     };
+    self.* = try init(allocator, .{});
+
+    return managed;
 }
 
 /// Create a new GherkinUnmanaged with ownership of the passed slice. The same
@@ -101,8 +105,12 @@ pub inline fn toOwnedSliceSentinel(
     self: *GherkinUnmanaged,
     allocator: Allocator,
     comptime sentinel: u8,
-) Allocator.Error![]u8 {
-    return self.toOwnedSlice(allocator)[0.. :sentinel];
+) Allocator.Error![:sentinel]u8 {
+    var owned_slice = try self.inner_list.toOwnedSliceSentinel(allocator, sentinel);
+    errdefer allocator.free(owned_slice);
+
+    self.* = try init(allocator, .{});
+    return owned_slice;
 }
 
 /// Create a copy of the GherkinUnmanaged. The same `allocator` must be used
@@ -236,4 +244,18 @@ fn innerWrite(
         },
         else => @compileError("Cannot write type '" ++ @typeName(T) ++ "'"),
     };
+}
+
+test "gherkin.GherkinUnmanaged/GherkinUnmanaged.toManaged" {
+    var gherkin = try GherkinUnmanaged.init(testing.allocator, .{});
+    defer gherkin.deinit(testing.allocator);
+
+    _ = try gherkin.write(testing.allocator, []const u8, "Hello, World!");
+    var copy = try testing.allocator.dupe(u8, gherkin.inner_list.items);
+    defer testing.allocator.free(copy);
+
+    var gherkin_managed = try gherkin.toManaged(testing.allocator);
+    defer gherkin_managed.deinit();
+
+    try testing.expectEqualStrings(copy, gherkin_managed.unmanaged.inner_list.items);
 }

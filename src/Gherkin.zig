@@ -112,10 +112,10 @@ pub inline fn toOwnedSlice(self: *Gherkin) Allocator.Error![]u8 {
 /// The caller owns the returned memory, emptying this gherkin. The `deinit`
 /// method remains safe to call, however, it is unnecessary.
 pub inline fn toOwnedSliceSentinel(
-    self: *GherkinUnmanaged,
+    self: *Gherkin,
     comptime sentinel: u8,
-) Allocator.Error![]u8 {
-    return self.toOwnedSlice(self.allocator)[0.. :sentinel];
+) Allocator.Error![:sentinel]u8 {
+    return try self.unmanaged.toOwnedSliceSentinel(self.allocator, sentinel);
 }
 
 /// Create a copy of the Gherkin.
@@ -160,4 +160,83 @@ pub inline fn writeManySentinel(
     len: usize,
 ) Allocator.Error!usize {
     return self.writeMany(T, ptr, len + 1);
+}
+
+test "gherkin.Gherkin/Gherkin.moveToUnmanaged" {
+    var gherkin = try Gherkin.init(testing.allocator, .{});
+    defer gherkin.deinit();
+
+    _ = try gherkin.write([]const u8, "Hello, World!");
+    var copy = try testing.allocator.dupe(u8, gherkin.unmanaged.inner_list.items);
+    defer testing.allocator.free(copy);
+
+    var unmanaged_gherkin = try gherkin.moveToUnmanaged();
+    defer unmanaged_gherkin.deinit(testing.allocator);
+
+    try testing.expectEqualStrings(copy, unmanaged_gherkin.inner_list.items);
+}
+
+test "gherkin.Gherkin/Gherkin.fromOwnedSlice" {
+    var slice = try testing.allocator.dupe(u8, "Hello, World!");
+
+    var gherkin = Gherkin.fromOwnedSlice(testing.allocator, slice);
+    defer gherkin.deinit();
+
+    // Compare pointers as no re-slicing occurs.
+    try testing.expectEqual(slice, gherkin.unmanaged.inner_list.items);
+}
+
+test "gherkin.Gherkin/Gherkin.fromOwnedSliceSentinel" {
+    var slice = try testing.allocator.dupeZ(u8, "Hello, World!");
+
+    var gherkin = Gherkin.fromOwnedSliceSentinel(testing.allocator, 0, slice);
+    defer gherkin.deinit();
+
+    // Compare contents as re-slicing occurs internally.
+    try testing.expectEqualStrings(slice, gherkin.unmanaged.inner_list.items);
+}
+
+test "gherkin.Gherkin/Gherkin.toOwnedSlice" {
+    var gherkin = try Gherkin.init(testing.allocator, .{});
+    defer gherkin.deinit();
+
+    _ = try gherkin.write([]const u8, "Hello, World!");
+
+    var copy = try testing.allocator.dupe(u8, gherkin.unmanaged.inner_list.items);
+    defer testing.allocator.free(copy);
+
+    var owned_slice = try gherkin.toOwnedSlice();
+    defer testing.allocator.free(owned_slice);
+
+    try testing.expectEqualStrings(copy, owned_slice);
+}
+
+test "gherkin.Gherkin/Gherkin.toOwnedSliceSentinel" {
+    var gherkin = try Gherkin.init(testing.allocator, .{});
+    defer gherkin.deinit();
+
+    _ = try gherkin.write([]const u8, "Hello, World!");
+
+    var copy = try testing.allocator.dupeZ(u8, gherkin.unmanaged.inner_list.items);
+    defer testing.allocator.free(copy);
+
+    var owned_slice = try gherkin.toOwnedSliceSentinel(0);
+    defer testing.allocator.free(owned_slice);
+
+    try testing.expectEqualStrings(copy, owned_slice);
+}
+
+test "gherkin.Gherkin/Gherkin.clone" {
+    var gherkin = try Gherkin.init(testing.allocator, .{});
+    defer gherkin.deinit();
+
+    _ = try gherkin.write([]const u8, "Hello, World!");
+
+    var gherkin_clone = try gherkin.clone();
+    defer gherkin_clone.deinit();
+
+    try testing.expectEqualStrings(
+        gherkin.unmanaged.inner_list.items,
+        gherkin_clone.unmanaged.inner_list.items,
+    );
 }
