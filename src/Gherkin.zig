@@ -20,6 +20,7 @@ unmanaged: GherkinUnmanaged,
 /// appropriate methods called on the value held in `unmanaged`.
 allocator: Allocator,
 
+/// Internal reference to the container.
 const Gherkin = @This();
 
 /// This type exists due to changes with the type system in Zig 0.11.0, it also

@@ -15,6 +15,7 @@ const Gherkin = @import("Gherkin.zig");
 /// allocated memory required.
 inner_list: InnerList,
 
+/// Internal reference to the container.
 const GherkinUnmanaged = @This();
 
 /// This type exists due to changes with the type system in Zig 0.11.0, it also
