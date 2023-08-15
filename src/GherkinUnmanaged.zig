@@ -216,6 +216,15 @@ fn innerWrite(
 
             break :write_int @sizeOf(T);
         },
+        .Float => |float_info| write_float: {
+            const Int = std.meta.Int(.unsigned, @intCast(float_info.bits));
+            const int = @as(*const Int, @ptrCast(&value)).*;
+
+            var target_memory = try self.inner_list.addManyAsArray(allocator, @sizeOf(Int));
+            mem.writeIntLittle(Int, target_memory, int);
+
+            break :write_float @sizeOf(Int);
+        },
         .Array => |array_info| return if (array_info.sentinel == null)
             self.writeMany(allocator, array_info.child, &value, array_info.size)
         else
@@ -258,4 +267,19 @@ test "gherkin.GherkinUnmanaged/GherkinUnmanaged.toManaged" {
     defer gherkin_managed.deinit();
 
     try testing.expectEqualStrings(copy, gherkin_managed.unmanaged.inner_list.items);
+}
+
+test "gherkin.GherkinUnmanaged/GherkinUnmanaged.write -> Float" {
+    var gherkin = try GherkinUnmanaged.init(testing.allocator, .{});
+    defer gherkin.deinit(testing.allocator);
+
+    _ = try gherkin.write(testing.allocator, f32, 13.37);
+
+    const Int = std.meta.Int(.unsigned, @intCast(@typeInfo(f32).Float.bits));
+    const float = @as(*const f32, @ptrCast(&mem.readIntLittle(
+        Int,
+        gherkin.inner_list.items[@sizeOf(u32) .. @sizeOf(u32) + @sizeOf(Int)],
+    ))).*;
+
+    try testing.expectEqual(@as(f32, 13.37), float);
 }
