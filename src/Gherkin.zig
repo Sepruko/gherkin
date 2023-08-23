@@ -1,35 +1,35 @@
-//! Allows for writing particular simple data types as binary data to an
-//! in-memory slice, which can then be retrieved for writing to an
-//! `std.io.Writer`.
+//! This struct is a memory-managed wrapper for `gherkin.GherkinUnmanaged`. If
+//! you'd like to know more about how to use it, view the documentation for that
+//! type instead.
 //!
-//! This struct internally stores an `std.mem.Allocator` for memory management.
-//! To manually specify an allocator with each method call see
-//! `GherkinUnmanaged`.
+//! For reference, this is to `gherkin.GherkinUnmanaged` like `std.ArrayList` is
+//! to `std.ArrayListUnmanaged`.
+
+const Gherkin = @This();
 
 const std = @import("std");
+const heap = std.heap;
 const mem = std.mem;
 const meta = std.meta;
 const testing = std.testing;
 const Allocator = mem.Allocator;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
+const FixedBufferAllocator = heap.FixedBufferAllocator;
+
 const GherkinUnmanaged = @import("GherkinUnmanaged.zig");
 
-/// The unmanaged gherkin that is wrapped by this memory-managed alternative.
+/// The held `GherkinUnmanaged` that this `Gherkin` wraps. This value will have
+/// its appropriate methods called with `.allocator` passed in automatically.
 unmanaged: GherkinUnmanaged,
 
-/// The allocator used to perform automatic memory management, passed to
-/// appropriate methods called on the value held in `unmanaged`.
+/// The allocator that is kept and used by this `Gherkin` for automatically
+/// passing to `.unmanaged`'s methods.
 allocator: Allocator,
 
-/// Internal reference to the container.
-const Gherkin = @This();
+/// An alias to `GherkinUnmanaged`'s public type of the same name.
+pub const InnerList = ArrayListUnmanaged(u8);
 
-/// This type exists due to changes with the type system in Zig 0.11.0, it also
-/// provides an easy reference to the exact type used by the wrapped
-/// GherkinUnmanaged.
-pub const InnerList = GherkinUnmanaged.InnerList;
-
-/// Options for when initializing a new Gherkin with `init`, this is merged with
-/// GherkinUnmanaged's type of the same name.
+/// Options for customizing the resulting `Gherkin` from `.init`.
 pub const Options = @Type(.{ .Struct = .{
     .layout = .Auto,
     .fields = meta.fields(struct {
@@ -39,49 +39,42 @@ pub const Options = @Type(.{ .Struct = .{
     .is_tuple = false,
 } });
 
-/// Initialize a new Gherkin. Used for writing simple values as binary
-/// data to memory.
+/// Create a new `Gherkin` as per the provided options. The passed
+/// `std.mem.Allocator` is used for allocating the initial space required by
+/// `options.header_size` and throughout the life of the `Gherkin`.
 ///
-/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
+/// This method will `@panic` if the provided `options.header_size` cannot fit a
+/// `u32` (assumes developer error).
 pub fn init(allocator: Allocator, options: Options) Allocator.Error!Gherkin {
-    var unmanaged_options_ptr = @as(
-        *GherkinUnmanaged.Options,
-        @ptrFromInt(@intFromPtr(&options) + @offsetOf(
-            Options,
-            meta.fields(GherkinUnmanaged.Options)[0].name,
-        )),
+    var inner_opts: *GherkinUnmanaged.Options = @ptrFromInt(
+        @intFromPtr(&options) + @offsetOf(Options, meta.fields(GherkinUnmanaged.Options)[0].name),
     );
 
     return .{
-        .unmanaged = options.unmanaged orelse try GherkinUnmanaged.init(
-            allocator,
-            unmanaged_options_ptr.*,
-        ),
+        .unmanaged = options.unmanaged orelse try GherkinUnmanaged.init(allocator, inner_opts.*),
         .allocator = allocator,
     };
 }
 
-/// Deinitialize a GherkinUnmanaged, cleaning up any memory still allocated with
-/// the internal `allocator`.
+/// Deinitialize the `Gherkin`, freeing the allocated pickled memory.
 pub fn deinit(self: *Gherkin) void {
     self.unmanaged.deinit(self.allocator);
     self.* = undefined;
 }
 
-/// Convert this Gherkin into the memory-unmanaged equivalent. The returned
-/// gherkin has ownership of the allocated memory.
-///
-/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
-pub fn moveToUnmanaged(self: *Gherkin) Allocator.Error!GherkinUnmanaged {
+/// Convert this `Gherkin` into a `GherkinUnmanaged`, and it will no-longer be
+/// safe to call `.deinit` on the donor `Gherkin`.
+pub fn moveToUnmanaged(self: *Gherkin) GherkinUnmanaged {
     const unmanaged = self.unmanaged;
-    self.* = try init(self.allocator, .{});
+    self.* = undefined;
 
     return unmanaged;
 }
 
-/// Create a new Gherkin with ownership of the passed slice.
+/// Initialize a new `Gherkin` with ownership of the passed `slice`. The same
+/// `allocator` that allocated the `slice` must be passed.
 ///
-/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
+/// Deinitialize with `.deinit`, `.toOwnedSlice`, or `.toOwnedSliceSentinel`.
 pub fn fromOwnedSlice(allocator: Allocator, slice: []u8) Gherkin {
     return .{
         .unmanaged = GherkinUnmanaged.fromOwnedSlice(slice),
@@ -89,10 +82,12 @@ pub fn fromOwnedSlice(allocator: Allocator, slice: []u8) Gherkin {
     };
 }
 
-/// Create a new Gherkin with ownership of the passed slice.
+/// Initialize a new `Gherkin` with ownership of the passed `slice` (with a
+/// sentinel). The same `allocator` that allocated the `slice` must also be
+/// passed.
 ///
-/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
-pub inline fn fromOwnedSliceSentinel(
+/// Deinitialize with `.deinit`, `.toOwnedSlice`, or `.toOwnedSliceSentinel`.
+pub fn fromOwnedSliceSentinel(
     allocator: Allocator,
     comptime sentinel: u8,
     slice: [:sentinel]u8,
@@ -103,24 +98,26 @@ pub inline fn fromOwnedSliceSentinel(
     };
 }
 
-/// The caller owns the returned memory, emptying this gherkin. The `deinit`
-/// method remains safe to call, however, it is unnecessary.
-pub inline fn toOwnedSlice(self: *Gherkin) Allocator.Error![]u8 {
+/// Claim the internal memory buffer from the `Gherkin`. It will no-longer be
+/// safe to call `.deinit` on the `Gherkin`.
+pub fn toOwnedSlice(self: *Gherkin) Allocator.Error![]u8 {
+    defer self.* = undefined;
     return self.unmanaged.toOwnedSlice(self.allocator);
 }
 
-/// The caller owns the returned memory, emptying this gherkin. The `deinit`
-/// method remains safe to call, however, it is unnecessary.
-pub inline fn toOwnedSliceSentinel(
+/// Claim the internal memory buffer (with a sentinel) from the `Gherkin`. It
+/// will no-longer be safe to call `.deinit` on the `Gherkin`.
+pub fn toOwnedSliceSentinel(
     self: *Gherkin,
     comptime sentinel: u8,
 ) Allocator.Error![:sentinel]u8 {
-    return try self.unmanaged.toOwnedSliceSentinel(self.allocator, sentinel);
+    defer self.* = undefined;
+    return self.unmanaged.toOwnedSliceSentinel(self.allocator, sentinel);
 }
 
-/// Create a copy of the Gherkin.
+/// Create a clone of the `Gherkin`.
 ///
-/// Deinitialize with `deinit`, `toOwnedSlice`, or `toOwnedSliceSentinel`.
+/// Deinitialize with `.deinit`, `.toOwnedSlice`, or `.toOwnedSliceSentinel`.
 pub fn clone(self: Gherkin) Allocator.Error!Gherkin {
     return .{
         .unmanaged = try self.unmanaged.clone(self.allocator),
@@ -128,18 +125,18 @@ pub fn clone(self: Gherkin) Allocator.Error!Gherkin {
     };
 }
 
-/// Write a simple type as binary data to memory. The same `allocator` must be
-/// used throughout the lifetime of the gherkin.
+/// Write a pickled value with a simple type to the internal memory buffer.
 ///
-/// See the documentation for `GherkinUnmanaged.write` for more details about
-/// supported value types and special cases.
+/// See the documentation for `gherkin.GherkinUnmanaged.write` on which types
+/// may be pickled.
 pub inline fn write(self: *Gherkin, comptime T: type, value: T) Allocator.Error!usize {
     return self.unmanaged.write(self.allocator, T, value);
 }
 
-/// Used to write many-item pointers to memory as binary data. See the
-/// documentation for `GherkinUnmanaged.write` to see what child types are
-/// supported.
+/// Write a pickled many-item pointer to the internal memory buffer.
+///
+/// See the documentation for `gherkin.GherkinUnmanaged.write` on which types
+/// may be pickled.
 pub inline fn writeMany(
     self: *Gherkin,
     comptime T: type,
@@ -149,9 +146,11 @@ pub inline fn writeMany(
     return self.unmanaged.writeMany(self.allocator, T, ptr, len);
 }
 
-/// Used to write many-item pointers to memory as binary data. See the
-/// documentation for `GherkinUnmanaged.write` to see what child types are
-/// supported.
+/// Write a pickled many-item pointer (with a sentinel) to the internal memory
+/// buffer.
+///
+/// See the documentation for `gherkin.GherkinUnmanaged.write` on which types
+/// may be pickled.
 pub inline fn writeManySentinel(
     self: *Gherkin,
     comptime T: type,
@@ -159,27 +158,27 @@ pub inline fn writeManySentinel(
     ptr: [*:sentinel]const T,
     len: usize,
 ) Allocator.Error!usize {
-    return self.writeMany(T, ptr, len + 1);
+    return self.unmanaged.writeMany(self.allocator, T, ptr, len + 1);
 }
 
 test "gherkin.Gherkin/Gherkin.moveToUnmanaged" {
-    var gherkin = try Gherkin.init(testing.allocator, .{});
-    defer gherkin.deinit();
+    var gherkin = try init(testing.allocator, .{});
 
-    _ = try gherkin.write([]const u8, "Hello, World!");
+    _ = try gherkin.write([]const u8, "foobar");
+
     var copy = try testing.allocator.dupe(u8, gherkin.unmanaged.inner_list.items);
     defer testing.allocator.free(copy);
 
-    var unmanaged_gherkin = try gherkin.moveToUnmanaged();
+    var unmanaged_gherkin = gherkin.moveToUnmanaged();
     defer unmanaged_gherkin.deinit(testing.allocator);
 
     try testing.expectEqualStrings(copy, unmanaged_gherkin.inner_list.items);
 }
 
 test "gherkin.Gherkin/Gherkin.fromOwnedSlice" {
-    var slice = try testing.allocator.dupe(u8, "Hello, World!");
+    var slice = try testing.allocator.dupe(u8, "foobar");
 
-    var gherkin = Gherkin.fromOwnedSlice(testing.allocator, slice);
+    var gherkin = fromOwnedSlice(testing.allocator, slice);
     defer gherkin.deinit();
 
     // Compare pointers as no re-slicing occurs.
@@ -187,20 +186,19 @@ test "gherkin.Gherkin/Gherkin.fromOwnedSlice" {
 }
 
 test "gherkin.Gherkin/Gherkin.fromOwnedSliceSentinel" {
-    var slice = try testing.allocator.dupeZ(u8, "Hello, World!");
+    var slice_z = try testing.allocator.dupeZ(u8, "foobar");
 
-    var gherkin = Gherkin.fromOwnedSliceSentinel(testing.allocator, 0, slice);
+    var gherkin = fromOwnedSliceSentinel(testing.allocator, 0, slice_z);
     defer gherkin.deinit();
 
     // Compare contents as re-slicing occurs internally.
-    try testing.expectEqualStrings(slice, gherkin.unmanaged.inner_list.items);
+    try testing.expectEqualStrings(slice_z, gherkin.unmanaged.inner_list.items);
 }
 
 test "gherkin.Gherkin/Gherkin.toOwnedSlice" {
-    var gherkin = try Gherkin.init(testing.allocator, .{});
-    defer gherkin.deinit();
+    var gherkin = try init(testing.allocator, .{});
 
-    _ = try gherkin.write([]const u8, "Hello, World!");
+    _ = try gherkin.write([]const u8, "foobar");
 
     var copy = try testing.allocator.dupe(u8, gherkin.unmanaged.inner_list.items);
     defer testing.allocator.free(copy);
@@ -212,31 +210,60 @@ test "gherkin.Gherkin/Gherkin.toOwnedSlice" {
 }
 
 test "gherkin.Gherkin/Gherkin.toOwnedSliceSentinel" {
-    var gherkin = try Gherkin.init(testing.allocator, .{});
-    defer gherkin.deinit();
+    var gherkin = try init(testing.allocator, .{});
 
-    _ = try gherkin.write([]const u8, "Hello, World!");
+    _ = try gherkin.write([]const u8, "foobar");
 
-    var copy = try testing.allocator.dupeZ(u8, gherkin.unmanaged.inner_list.items);
-    defer testing.allocator.free(copy);
+    var copy_z = try testing.allocator.dupeZ(u8, gherkin.unmanaged.inner_list.items);
+    defer testing.allocator.free(copy_z);
 
-    var owned_slice = try gherkin.toOwnedSliceSentinel(0);
-    defer testing.allocator.free(owned_slice);
+    var owned_slice_z = try gherkin.toOwnedSliceSentinel(0);
+    defer testing.allocator.free(owned_slice_z);
 
-    try testing.expectEqualStrings(copy, owned_slice);
+    try testing.expectEqualStrings(copy_z, owned_slice_z);
 }
 
 test "gherkin.Gherkin/Gherkin.clone" {
-    var gherkin = try Gherkin.init(testing.allocator, .{});
+    var gherkin = try init(testing.allocator, .{});
     defer gherkin.deinit();
-
-    _ = try gherkin.write([]const u8, "Hello, World!");
 
     var gherkin_clone = try gherkin.clone();
     defer gherkin_clone.deinit();
 
+    try testing.expect(
+        gherkin.unmanaged.inner_list.items.ptr !=
+            gherkin_clone.unmanaged.inner_list.items.ptr,
+    );
     try testing.expectEqualStrings(
         gherkin.unmanaged.inner_list.items,
         gherkin_clone.unmanaged.inner_list.items,
     );
+}
+
+test "gherkin.Gherkin/Gherkin.write -> .Float" {
+    var gherkin_32 = try init(testing.allocator, .{});
+    defer gherkin_32.deinit();
+
+    _ = try gherkin_32.write(f32, 13.37);
+
+    const Int32 = meta.Int(.unsigned, @sizeOf(f32) * 8);
+    const float_32 = @as(*const f32, (@ptrCast(&mem.readIntLittle(
+        Int32,
+        gherkin_32.unmanaged.inner_list.items[@sizeOf(u32) .. @sizeOf(u32) + @sizeOf(Int32)],
+    )))).*;
+
+    _ = try testing.expectEqual(@as(f32, 13.37), float_32);
+
+    var gherkin_80 = try init(testing.allocator, .{});
+    defer gherkin_80.deinit();
+
+    _ = try gherkin_80.write(f80, 80.08);
+
+    const Int80 = meta.Int(.unsigned, @sizeOf(f80) * 8);
+    const float_80 = @as(*align(4) const f80, (@ptrCast(&mem.readIntLittle(
+        Int80,
+        gherkin_80.unmanaged.inner_list.items[@sizeOf(u32) .. @sizeOf(u32) + @sizeOf(Int80)],
+    )))).*;
+
+    _ = try testing.expectEqual(@as(f80, 80.08), float_80);
 }
