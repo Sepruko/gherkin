@@ -26,8 +26,8 @@ len: usize,
 
 /// Errors that may occur whilst attempting to iterate over pickled memory.
 pub const Error = error{
-    CollectionTooLarge,
-    CollectionTooSmall,
+    GroupTooLarge,
+    GroupTooSmall,
     OutOfMemory,
 };
 
@@ -107,7 +107,7 @@ pub fn next(
 ///   pointers.
 /// - You may not read too-little or too-many elements into an array, consider
 ///   reading a slice, or into a many-item pointer with `.nextMany` or
-///   `.nextManySentinel` if you do not know the size of the collection.
+///   `.nextManySentinel` if you do not know the size of the group.
 pub fn nextAlloc(
     self: *GherkinIterator,
     allocator: Allocator,
@@ -125,9 +125,9 @@ pub fn nextAlloc(
                 const sentinel = comptime meta.sentinel(T);
                 const array_len: usize = @intCast(try self.next(u31));
                 if (array_len > arr.len)
-                    return error.CollectionTooLarge
+                    return error.GroupTooLarge
                 else if (array_len < arr.len)
-                    return error.CollectionTooSmall;
+                    return error.GroupTooSmall;
 
                 self.index -= @sizeOf(u31);
 
@@ -224,7 +224,7 @@ pub fn nextMany(
     }
 
     const ptr_len: usize = @intCast(try self.next(u31));
-    if (ptr_len > len) return error.CollectionTooLarge;
+    if (ptr_len > len) return error.GroupTooLarge;
 
     var i: usize = 0;
     while (i < ptr_len) : (i += 1) ptr[i] = try self.innerNext(T);
