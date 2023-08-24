@@ -32,7 +32,12 @@ pub const Error = error{
 };
 
 /// Initialize a new `Iterator`.
+///
+/// This method will `@panic` if the provided `buffer` cannot fit a `u32`
+/// (assumes developer error).
 pub fn init(buffer: []const u8) GherkinIterator {
+    if (buffer.len < @sizeOf(u32)) @panic("Provided buffer is too small to fit @sizeOf(u32)");
+
     return .{
         .ptr = buffer.ptr,
         .len = buffer.len,
@@ -57,6 +62,12 @@ pub fn skip(self: *GherkinIterator, n: usize) error{OutOfMemory}!void {
 pub fn backtrack(self: *GherkinIterator, n: usize) error{OutOfMemory}!void {
     if (@as(bool, @bitCast(@subWithOverflow(self.index, n)[1]))) return error.OutOfMemory;
     self.index -= n;
+}
+
+/// Reset the `GherkinIterator`'s index back to `@sizeOf(u32)` (to ignore the
+/// `header_size`).
+pub fn reset(self: *GherkinIterator) void {
+    self.index = @sizeOf(u32);
 }
 
 /// Attempt to read type `T` from the pickled memory.
