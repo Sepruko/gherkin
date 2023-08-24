@@ -174,15 +174,17 @@ pub inline fn writeManySentinel(
 test "gherkin.Gherkin/Gherkin.moveToUnmanaged" {
     var gherkin = try init(testing.allocator, .{});
 
-    _ = try gherkin.write([]const u8, "foobar");
-
-    var copy = try testing.allocator.dupe(u8, gherkin.unmanaged.inner_list.items);
-    defer testing.allocator.free(copy);
+    const @"expected_[]const u8" = "foobar";
+    _ = try gherkin.write([]const u8, @"expected_[]const u8");
 
     var unmanaged_gherkin = gherkin.moveToUnmanaged();
     defer unmanaged_gherkin.deinit(testing.allocator);
 
-    try testing.expectEqualStrings(copy, unmanaged_gherkin.inner_list.items);
+    try testing.expectEqualStrings(
+        // 11 ++ 6 ++ @"expected_[]const u8"
+        "\x0e\x00\x00\x00" ++ "\x06\x00\x00\x00" ++ @"expected_[]const u8",
+        unmanaged_gherkin.inner_list.items,
+    );
 }
 
 test "gherkin.Gherkin/Gherkin.fromOwnedSlice" {
@@ -208,29 +210,35 @@ test "gherkin.Gherkin/Gherkin.fromOwnedSliceSentinel" {
 test "gherkin.Gherkin/Gherkin.toOwnedSlice" {
     var gherkin = try init(testing.allocator, .{});
 
-    _ = try gherkin.write([]const u8, "foobar");
-
-    var copy = try testing.allocator.dupe(u8, gherkin.unmanaged.inner_list.items);
-    defer testing.allocator.free(copy);
+    const @"expected_[]const u8" = "foobar";
+    _ = try gherkin.write([]const u8, @"expected_[]const u8");
 
     var owned_slice = try gherkin.toOwnedSlice();
     defer testing.allocator.free(owned_slice);
 
-    try testing.expectEqualStrings(copy, owned_slice);
+    try testing.expectEqualStrings(
+        // 11 ++ 6 ++ @"expected_[]const u8"
+        "\x0e\x00\x00\x00" ++ "\x06\x00\x00\x00" ++ @"expected_[]const u8",
+        owned_slice,
+    );
 }
 
 test "gherkin.Gherkin/Gherkin.toOwnedSliceSentinel" {
     var gherkin = try init(testing.allocator, .{});
 
-    _ = try gherkin.write([]const u8, "foobar");
-
-    var copy_z = try testing.allocator.dupeZ(u8, gherkin.unmanaged.inner_list.items);
-    defer testing.allocator.free(copy_z);
+    const @"expected_[]const u8" = "foobar";
+    _ = try gherkin.write([]const u8, @"expected_[]const u8");
 
     var owned_slice_z = try gherkin.toOwnedSliceSentinel(0);
     defer testing.allocator.free(owned_slice_z);
 
-    try testing.expectEqualStrings(copy_z, owned_slice_z);
+    try testing.expectEqualStrings(
+        // 11 ++ 6 ++ @"expected_[]const u8" ++ 0
+        "\x0e\x00\x00\x00" ++ "\x06\x00\x00\x00" ++ @"expected_[]const u8" ++ "\x00",
+        // Include sentinel, or get an out-of-bounds error meaning we did
+        // something wrong.
+        owned_slice_z[0 .. owned_slice_z.len + 1],
+    );
 }
 
 test "gherkin.Gherkin/Gherkin.clone" {
@@ -251,29 +259,32 @@ test "gherkin.Gherkin/Gherkin.clone" {
 }
 
 test "gherkin.Gherkin/Gherkin.write -> .Float" {
-    var gherkin_32 = try init(testing.allocator, .{});
-    defer gherkin_32.deinit();
+    var gherkin = try init(testing.allocator, .{});
+    defer gherkin.deinit();
 
-    _ = try gherkin_32.write(f32, 13.37);
+    const size_f32: usize = @sizeOf(f32);
+    const IntFloat32 = meta.Int(.unsigned, @as(u16, @truncate(size_f32)) * @bitSizeOf(u8));
+    const expected_f32: f32 = 13.37;
 
-    const Int32 = meta.Int(.unsigned, @sizeOf(f32) * 8);
-    const float_32 = @as(*const f32, (@ptrCast(&mem.readIntLittle(
-        Int32,
-        gherkin_32.unmanaged.inner_list.items[@sizeOf(u32) .. @sizeOf(u32) + @sizeOf(Int32)],
+    _ = try gherkin.write(f32, expected_f32);
+    const index_f32 = gherkin.unmanaged.inner_list.items.len - size_f32;
+
+    const result_f32 = @as(*const f32, @ptrCast(&mem.readIntLittle(IntFloat32, @as(
+        *const [size_f32]u8,
+        @ptrCast(gherkin.unmanaged.inner_list.items[index_f32 .. index_f32 + size_f32].ptr),
     )))).*;
+    try testing.expectEqual(expected_f32, result_f32);
 
-    _ = try testing.expectEqual(@as(f32, 13.37), float_32);
+    const size_f80: usize = @sizeOf(f80);
+    const IntFloat80 = meta.Int(.unsigned, @as(u16, @truncate(size_f80)) * @bitSizeOf(u8));
+    const expected_f80: f80 = 80.08;
 
-    var gherkin_80 = try init(testing.allocator, .{});
-    defer gherkin_80.deinit();
+    _ = try gherkin.write(f80, expected_f80);
+    const index_f80 = gherkin.unmanaged.inner_list.items.len - size_f80;
 
-    _ = try gherkin_80.write(f80, 80.08);
-
-    const Int80 = meta.Int(.unsigned, @sizeOf(f80) * 8);
-    const float_80 = @as(*align(4) const f80, (@ptrCast(&mem.readIntLittle(
-        Int80,
-        gherkin_80.unmanaged.inner_list.items[@sizeOf(u32) .. @sizeOf(u32) + @sizeOf(Int80)],
+    const result_f80 = @as(*align(1) const f80, @ptrCast(&mem.readIntLittle(IntFloat80, @as(
+        *const [size_f80]u8,
+        @ptrCast(gherkin.unmanaged.inner_list.items[index_f80 .. index_f80 + size_f80].ptr),
     )))).*;
-
-    _ = try testing.expectEqual(@as(f80, 80.08), float_80);
+    try testing.expectEqual(expected_f80, result_f80);
 }

@@ -268,16 +268,20 @@ fn innerWrite(
             return @sizeOf(u1);
         },
         .Int => {
-            var target_mem = try self.inner_list.addManyAsArray(allocator, @sizeOf(T));
+            const size_t = @sizeOf(T);
+
+            var target_mem = try self.inner_list.addManyAsArray(allocator, size_t);
             mem.writeIntLittle(T, target_mem, value);
 
-            return @sizeOf(T);
+            return size_t;
         },
         .Float => {
-            const Int = meta.Int(.unsigned, @sizeOf(T) * 8);
+            const size_t = @sizeOf(T);
+
+            const Int = meta.Int(.unsigned, size_t * @bitSizeOf(u8));
             const int = @as(*const Int, @ptrCast(&value)).*;
 
-            var target_mem = try self.inner_list.addManyAsArray(allocator, @sizeOf(T));
+            var target_mem = try self.inner_list.addManyAsArray(allocator, size_t);
             mem.writeIntLittle(Int, target_mem, int);
 
             return @sizeOf(Int);
@@ -349,13 +353,15 @@ fn innerWriteMany(
 test "gherkin.GherkinUnmanaged/GherkinUnmanaged.toManaged" {
     var unmanaged_gherkin = try init(testing.allocator, .{});
 
-    _ = try unmanaged_gherkin.write(testing.allocator, []const u8, "foobar");
-
-    var copy = try testing.allocator.dupe(u8, unmanaged_gherkin.inner_list.items);
-    defer testing.allocator.free(copy);
+    const @"expected_[]const u8" = "foobar";
+    _ = try unmanaged_gherkin.write(testing.allocator, []const u8, @"expected_[]const u8");
 
     var gherkin = unmanaged_gherkin.toManaged(testing.allocator);
     defer gherkin.deinit();
 
-    try testing.expectEqualStrings(copy, gherkin.unmanaged.inner_list.items);
+    try testing.expectEqualStrings(
+        // 11 ++ 6 ++ @"expected_[]const u8"
+        "\x0e\x00\x00\x00" ++ "\x06\x00\x00\x00" ++ @"expected_[]const u8",
+        gherkin.unmanaged.inner_list.items,
+    );
 }

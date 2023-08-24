@@ -261,8 +261,8 @@ pub fn innerNext(self: *GherkinIterator, comptime T: type) Error!T {
             const size_t = @sizeOf(T);
             try self.skip(size_t);
 
-            // @bitSizeOf reports incorrectly for f80.
-            const Int = meta.Int(.unsigned, @sizeOf(T) * 8);
+            // @bitSizeOf(f80) reports incorrectly.
+            const Int = meta.Int(.unsigned, size_t * @bitSizeOf(u8));
             return @as(*align(1) const T, @ptrCast(&mem.readIntLittle(
                 Int,
                 @as(*const [size_t]u8, @ptrCast(&self.ptr[self.index - size_t])),
@@ -276,41 +276,48 @@ test "gherkin.GherkinIterator/GherkinIterator.next" {
     var gherkin = try Gherkin.init(testing.allocator, .{});
     defer gherkin.deinit();
 
-    _ = try gherkin.write(f64, 12.34);
-    _ = try gherkin.write(i16, 40);
+    const expected_f64: f64 = 12.34;
+    _ = try gherkin.write(f64, expected_f64);
+
+    const expected_i16: i16 = 40;
+    _ = try gherkin.write(i16, expected_i16);
 
     var iterator = gherkin.iterator();
 
-    const float_64 = try iterator.next(f64);
-    try testing.expectEqual(@as(f64, 12.34), float_64);
+    const result_f64 = try iterator.next(f64);
+    try testing.expectEqual(expected_f64, result_f64);
 
-    const int_16 = try iterator.next(i16);
-    try testing.expectEqual(@as(i16, 40), int_16);
+    const result_i16 = try iterator.next(i16);
+    try testing.expectEqual(expected_i16, result_i16);
 }
 
 test "gherkin.GherkinIterator/GherkinIterator.nextAlloc" {
     var gherkin = try Gherkin.init(testing.allocator, .{});
     defer gherkin.deinit();
 
-    _ = try gherkin.write([]const u8, "foobar");
-    _ = try gherkin.write([5]f80, [5]f80{ 1.0, 2.0, 3.0, 4.0, 5.0 });
+    const @"expected_[]const u8" = "foobar";
+    _ = try gherkin.write([]const u8, @"expected_[]const u8");
+
+    const @"expected_[5]f80" = [5]f80{ 1.0, 2.0, 3.0, 4.0, 5.0 };
+    _ = try gherkin.write([5]f80, @"expected_[5]f80");
 
     var iterator = gherkin.iterator();
 
-    var str_foobar = try iterator.nextAlloc(testing.allocator, []const u8);
-    defer testing.allocator.free(str_foobar);
-    try testing.expectEqualStrings("foobar", str_foobar);
+    var @"target_[]const u8" = try iterator.nextAlloc(testing.allocator, []const u8);
+    defer testing.allocator.free(@"target_[]const u8");
+    try testing.expectEqualStrings(@"expected_[]const u8", @"target_[]const u8");
 
-    var arr_f80 = try iterator.nextAlloc(testing.allocator, [5]f80);
-    defer testing.allocator.destroy(arr_f80);
-    try testing.expectEqual([5]f80{ 1.0, 2.0, 3.0, 4.0, 5.0 }, arr_f80.*);
+    var @"target_[5]f80" = try iterator.nextAlloc(testing.allocator, [5]f80);
+    defer testing.allocator.destroy(@"target_[5]f80");
+    try testing.expectEqual(@"expected_[5]f80", @"target_[5]f80".*);
 }
 
 test "gherkin.GherkinIterator/GherkinIterator.nextMany" {
     var gherkin = try Gherkin.init(testing.allocator, .{});
     defer gherkin.deinit();
 
-    _ = try gherkin.write([5]u8, [5]u8{ 1, 2, 3, 4, 5 });
+    const @"expected_[5]u8" = [5]u8{ 1, 2, 3, 4, 5 };
+    _ = try gherkin.write([5]u8, @"expected_[5]u8");
 
     var iterator = gherkin.iterator();
 
@@ -319,14 +326,15 @@ test "gherkin.GherkinIterator/GherkinIterator.nextMany" {
 
     const u8s_read = try iterator.nextMany(u8, slice_u8.ptr, slice_u8.len);
     try testing.expectEqual(@as(usize, 5), u8s_read);
-    try testing.expectEqualSlices(u8, &[5]u8{ 1, 2, 3, 4, 5 }, slice_u8);
+    try testing.expectEqualSlices(u8, &@"expected_[5]u8", slice_u8);
 }
 
 test "gherkin.GherkinIterator/GherkinIterator.nextManySentinel" {
     var gherkin = try Gherkin.init(testing.allocator, .{});
     defer gherkin.deinit();
 
-    _ = try gherkin.write([5:0]u8, [5:0]u8{ 1, 2, 3, 4, 5 });
+    const @"expected_[5:0]u8" = [5:0]u8{ 1, 2, 3, 4, 5 };
+    _ = try gherkin.write([5:0]u8, @"expected_[5:0]u8");
 
     var iterator = gherkin.iterator();
 
@@ -335,7 +343,7 @@ test "gherkin.GherkinIterator/GherkinIterator.nextManySentinel" {
 
     const u8s_read = try iterator.nextManySentinel(u8, 0, slice_u8.ptr, slice_u8.len);
     try testing.expectEqual(@as(usize, 6), u8s_read);
-    try testing.expectEqualSlices(u8, &[5:0]u8{ 1, 2, 3, 4, 5 }, slice_u8);
+    try testing.expectEqualSlices(u8, &@"expected_[5:0]u8", slice_u8);
 }
 
 test "gherkin.GherkinIterator/GherkinIterator.skip" {
