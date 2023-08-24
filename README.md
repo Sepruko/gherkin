@@ -3,7 +3,7 @@
 A re-implementation of [`pickle.h`][pickle.h] in the
 [Zig programming language][zig].
 
-> **Warning**
+> [!WARNING]
 > This library targets the [`0.11.0` release][zig-target-release] of Zig. It
 > will **not** work on prior releases, and may not work on future releases.
 
@@ -37,7 +37,7 @@ Including this library in your `build.zig.zon` dependencies is easy!
 
 #### C & C-Interoperable Languages
 
-> **Warning**
+> [!IMPORTANT]
 > No support for these languages currently exists.
 
 ### Creating a `Gherkin` or `GherkinUnmanaged`
@@ -46,7 +46,7 @@ You can use either the `Gherkin` or `GherkinUnmanaged` structs to write simple
 values to memory as binary data, following the format output by
 [`pickle.h`][pickle.h].
 
-> **Warning**
+> [!IMPORTANT]
 > This section **DOES NOT** apply to C or C-Interoperable languages, only Zig.
 
 ```zig
@@ -83,7 +83,7 @@ You can create an `Iterator` directly from a `Gherkin` or `GherkinUnmanaged`
 via the `iterator` method, *or* from the `Iterator.init` function. You can then
 use this iterator to read simple value types from a pickled buffer.
 
-> **Warning**
+> [!IMPORTANT]
 > This section **DOES NOT** apply to C or C-Interoperable languages, only Zig.
 
 ```zig
