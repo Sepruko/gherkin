@@ -39,6 +39,12 @@ pub fn init(buffer: []const u8) GherkinIterator {
     };
 }
 
+/// Deinitialize the `GherkinIterator`. All this method does is set the
+/// underlying memory to `undefined`, which may help with debugging.
+pub fn deinit(self: *GherkinIterator) void {
+    self.* = undefined;
+}
+
 /// Skip ahead `n` bytes in the buffer. This method ensures that the index
 /// will not exceed the length, otherwise an error will be returned.
 pub fn skip(self: *GherkinIterator, n: usize) error{OutOfMemory}!void {
