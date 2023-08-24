@@ -16,6 +16,7 @@ const Allocator = mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const FixedBufferAllocator = heap.FixedBufferAllocator;
 
+const GherkinIterator = @import("GherkinIterator.zig");
 const GherkinUnmanaged = @import("GherkinUnmanaged.zig");
 
 /// The held `GherkinUnmanaged` that this `Gherkin` wraps. This value will have
@@ -60,6 +61,15 @@ pub fn init(allocator: Allocator, options: Options) Allocator.Error!Gherkin {
 pub fn deinit(self: *Gherkin) void {
     self.unmanaged.deinit(self.allocator);
     self.* = undefined;
+}
+
+/// Creates a new `GherkinIterator` from the target `GherkinUnmanaged`.
+///
+/// Be careful that growing the internal buffer of the `GherkinUnmanaged` will
+/// invalidate the pointer passed to the returned `GherkinIterator`, making it
+/// unsafe to read from.
+pub inline fn iterator(self: Gherkin) GherkinIterator {
+    return GherkinIterator.init(self.unmanaged.inner_list.items);
 }
 
 /// Convert this `Gherkin` into a `GherkinUnmanaged`, and it will no-longer be

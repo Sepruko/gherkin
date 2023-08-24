@@ -21,6 +21,7 @@ const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const FixedBufferAllocator = heap.FixedBufferAllocator;
 
 const Gherkin = @import("Gherkin.zig");
+const GherkinIterator = @import("GherkinIterator.zig");
 
 /// The internal `std.ArrayListUnmanaged` used for automatically growing memory
 /// as-required.
@@ -66,6 +67,15 @@ pub fn init(allocator: Allocator, options: Options) Allocator.Error!GherkinUnman
 pub fn deinit(self: *GherkinUnmanaged, allocator: Allocator) void {
     self.inner_list.deinit(allocator);
     self.* = undefined;
+}
+
+/// Creates a new `GherkinIterator` from the target `Gherkin`.
+///
+/// Be careful that growing the internal buffer of the `Gherkin` will invalidate
+/// the pointer passed to the returned `GherkinIterator`, making it unsafe to
+/// read from.
+pub inline fn iterator(self: Gherkin) GherkinIterator {
+    return GherkinIterator.init(self.unmanaged.inner_list.items);
 }
 
 /// Convert this `GherkinUnmanaged` into a `Gherkin`, and it will no-longer be
@@ -156,7 +166,7 @@ inline fn setHeaderSize(self: GherkinUnmanaged, size: u32) void {
 /// - If you'd like to write `const` slices of `u8`, `u16`, or `u32`, you can
 ///   use `@constCast` to have them encoded in little-endian instead of treated
 ///   as strings.
-/// - Recursive types (e.g. `[]const []const u8` or `[5][]const u16`) are
+/// - complex types (e.g. `[]const []const u8` or `[5][]const u16`) are
 ///   unsupported.
 /// - While integers and floats larger than 64 bits are supported, they are not
 ///   recommended to be used unless you will be reading them with a program that
@@ -175,15 +185,15 @@ pub fn write(
         .Bool, .Int, .Float => {},
         .Array => |arr| switch (@typeInfo(arr.child)) {
             .Bool, .Int, .Float => {},
-            else => @compileError("Cannot write recursive type '" ++ @typeName(T) ++ "'"),
+            else => @compileError("Cannot write complex type '" ++ @typeName(T) ++ "'"),
         },
         .Pointer => |ptr| switch (ptr.size) {
             .Many => @compileError("Use .writeMany or .writeManySentinel for many-item pointers"),
             .Slice => switch (@typeInfo(ptr.child)) {
                 .Bool, .Int, .Float => {},
-                else => @compileError("Cannot write recursive type '" ++ @typeName(T) ++ "'"),
+                else => @compileError("Cannot write complex type '" ++ @typeName(T) ++ "'"),
             },
-            else => @compileError("Cannot write recursive type '" ++ @typeName(T) ++ "'"),
+            else => @compileError("Cannot write complex type '" ++ @typeName(T) ++ "'"),
         },
         else => if (@sizeOf(T) > 0) @compileError("Cannot write type '" ++ @typeName(T) ++ "'"),
     };
@@ -212,7 +222,7 @@ pub fn writeMany(
 ) Allocator.Error!usize {
     comptime switch (@typeInfo(T)) {
         .Bool, .Int, .Float => {},
-        .Array, .Pointer => @compileError("Cannot write recursive type '" ++ @typeName(T) ++ "'"),
+        .Array, .Pointer => @compileError("Cannot write complex type '" ++ @typeName(T) ++ "'"),
         else => if (@sizeOf(T) > 0) @compileError("Cannot write type '" ++ @typeName(T) ++ "'"),
     };
 
@@ -264,7 +274,7 @@ fn innerWrite(
             return @sizeOf(T);
         },
         .Float => {
-            const Int = meta.Int(.unsigned, @as(u16, @sizeOf(T) * 8));
+            const Int = meta.Int(.unsigned, @sizeOf(T) * 8);
             const int = @as(*const Int, @ptrCast(&value)).*;
 
             var target_mem = try self.inner_list.addManyAsArray(allocator, @sizeOf(T));
@@ -273,17 +283,12 @@ fn innerWrite(
             return @sizeOf(Int);
         },
         .Array => |arr| {
-            const sentinel = meta.sentinel(T);
-            const len_size = try self.innerWrite(
-                allocator,
-                u31,
-                @as(u31, @truncate(value.len)),
-            );
+            const sentinel = comptime meta.sentinel(T);
 
-            return len_size + if (sentinel == null)
+            return try if (sentinel == null)
                 self.writeMany(allocator, arr.child, &value, arr.len)
             else
-                self.writeManySentinel(allocator, arr.child, sentinel, &value, arr.len);
+                self.writeManySentinel(allocator, arr.child, sentinel.?, &value, arr.len);
         },
         .Pointer => |ptr| switch (ptr.size) {
             .Slice => {
@@ -309,7 +314,7 @@ fn innerWrite(
                     else => {},
                 };
 
-                return self.innerWriteMany(
+                return self.writeMany(
                     allocator,
                     ptr.child,
                     value.ptr,
