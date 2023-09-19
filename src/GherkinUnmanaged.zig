@@ -1,13 +1,13 @@
-//! This struct can be used to create 'pickled' memory of simple types. If you'd
-//! like to know more about which value types are supported, check the `.write`
-//! method.
+//! This struct may be used to created "pickled" memory of simple values. If
+//! you would like to know which types can be encoded, check the
+//! 'GherkinUnmanaged.write' method.
 //!
 //! The same `std.mem.Allocator` must be used throughout the lifetime of a
 //! `GherkinUnmanaged`.
 //!
-//! This struct is a recreation of
-//! [`pickle.h`](https://chromium.googlesource.com/chromium/src/+/main/base/pickle.h)
-//! in Zig, it takes no reference from `pickle.cc`.
+//! This is an attempt at recreating the functionality of the
+//! [`pickle.h` header file](https://chromium.googlesource.com/chromium/src/+/main/base/pickle.h)
+//! in Google's Chromium.
 
 const GherkinUnmanaged = @This();
 
